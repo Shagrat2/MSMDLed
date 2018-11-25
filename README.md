@@ -26,3 +26,7 @@ Community
 =========
 * [MySensors.ru](http://mysensors.ru)
 * [MySensors.org](https://mysensors.org)
+
+Developers
+* Serjey Lokarev [Hardware]
+* Zaytsev Ivan [Software]
