@@ -18,7 +18,8 @@ TODO:
 * Start without gate, load last data from flash
 * MajorDomo mysensors pasport
 
-Supported IR controls
+Supported IR controls:
+
 ![24Button](https://github.com/Shagrat2/MSMDLed/raw/master/img/ctrl24.jpg)
 
 Community
