@@ -18,7 +18,7 @@ TODO:
 * Start without gate, load last data from flash
 * MajorDomo mysensors pasport
 
-![24Button](https://raw.githubusercontent.com/Shagrat2/MSMDLed/master/ctrl24.ino)
+![24Button](https://github.com/Shagrat2/MSMDLed/raw/master/img/ctrl24.jpg)
 
 Community
 =========
