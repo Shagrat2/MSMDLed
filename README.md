@@ -19,11 +19,9 @@ TODO:
 * MajorDomo mysensors pasport
 
 Supported IR controls
-=========
 ![24Button](https://github.com/Shagrat2/MSMDLed/raw/master/img/ctrl24.jpg)
 
 Community
-=========
 * [MySensors.ru](http://mysensors.ru)
 * [MySensors.org](https://mysensors.org)
 
