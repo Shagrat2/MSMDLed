@@ -1,13 +1,16 @@
 #define MY_NODE_ID AUTO
-#define MY_PARENT_NODE_ID AUTO 
-// #define MY_REPEATER_FEATURE // Enable repeater functionality for this node
+#define MY_PARENT_NODE_ID AUTO
+
+//#define MY_NODE_ID 115
 //#define MY_PASSIVE_NODE
+//#define MY_RF24_CHANNEL 78
 
 #define SKETCH_NAME "MSMD RGB"
 #define SKETCH_MAJOR_VER "0"
 #define SKETCH_MINOR_VER "1"
 
 const int HeartBitInterval = 60000;
+const int cSaveDelayed = 5000;
 
 //====
 #define MY_DEBUG 
@@ -71,20 +74,8 @@ decode_results results;
  
 void(* resetFunc) (void) = 0;
 
-void presentation(){
-  sendSketchInfo(SKETCH_NAME, SKETCH_MAJOR_VER"."SKETCH_MINOR_VER);
-
-  present(SensUID,      S_CUSTOM,   "2c3a692526a78bda");
-  present(SensNewID,    S_CUSTOM,   "Node new ID");
-
-  present(SensOn,       S_LIGHT,        "ON/OFF");
-  present(SensRGB,      S_RGB_LIGHT,    "RGB");
-  present(SensProg,     S_CUSTOM,       "Programe");
-  present(SensLevel,    S_LIGHT_LEVEL,  "Brightness (0-100)");
-  present(SensProfile,  S_CUSTOM,       "Profile 0=RGB;1=GRB");
-}
-
 unsigned long previsionTime; // HeartBit period
+unsigned long saveDelayed = 0;  // Отложенное сохранение
 byte Node_ID;                // ID of Node
 bool isON = 0;               // IsON
 byte Profile = 1;            // Profile: 0 - RGB, 1 - GRB
@@ -138,19 +129,62 @@ void before() {
   pinMode(CH1_PIN, OUTPUT);
   pinMode(CH2_PIN, OUTPUT);
   pinMode(CH3_PIN, OUTPUT);  
+
+  //=== Laod last state ===
+  uint8_t val;
+
+  // Programm
+  val = loadState(CPrgNum);
+  if (val != 0xFF) {
+    SetProg(val, false, false);
+  }
+
+  // Prg period
+  val = loadState(CPrgPeriod);
+  if (val != 0xFF) {
+    SetStepTime(val*100, false, false);
+  }
+
+  // Brightness
+  val = loadState(CBrightness);
+  if (val != 0xFF) {
+    SetBrightness(val, false, false);
+  }
+
+  // Color  
+  SetColor(loadState(CRVal), loadState(CGVal), loadState(CBVal), false, false);
+
+  // On
+  val = loadState(COnState);
+  if (val != 0xFF) {
+    SetOn(val, false, false);
+  }
 }
 
  void setup() {
   // Request
-  request(SensProfile, V_VAR1);     // Profile  
+  request(SensProfile, V_VAR1);      // Profile  
+  request(SensRGB, V_RGB);           // Color
   request(SensLevel, V_LIGHT_LEVEL); // Light level
-  request(SensProg, V_VAR1);        // Program
-  request(SensProg, V_VAR2);        // Step time  
-  request(SensRGB, V_RGB);          // Color
-  request(SensOn, V_STATUS);        // State
+  request(SensProg, V_VAR1);         // Program
+  request(SensProg, V_VAR2);         // Step time  
+  request(SensOn, V_STATUS);         // On/Off
   
   wdt_enable(WDTO_8S);  
   irrecv.enableIRIn(); // Start the receiver 
+}
+
+void presentation(){
+  sendSketchInfo(SKETCH_NAME, SKETCH_MAJOR_VER"."SKETCH_MINOR_VER);
+
+  present(SensUID,      S_CUSTOM,   "2c3a692526a78bda");
+  present(SensNewID,    S_CUSTOM,   "Node new ID");
+
+  present(SensOn,       S_LIGHT,        "ON/OFF");
+  present(SensRGB,      S_RGB_LIGHT,    "RGB");
+  present(SensProg,     S_CUSTOM,       "Programe");
+  present(SensLevel,    S_LIGHT_LEVEL,  "Brightness (0-100)");
+  present(SensProfile,  S_CUSTOM,       "Profile 0=RGB;1=GRB");
 }
 
 void PrgTableStep() {  
@@ -174,7 +208,7 @@ void PrgTableStep() {
   if (prgStep > DataLen)
     prgStep = 0;
   
-  SetColor(Data[prgStep][0], Data[prgStep][1], Data[prgStep][2], false, false);
+  UpdColor(Data[prgStep][0], Data[prgStep][1], Data[prgStep][2]);
   prgStep++;
 }
 
@@ -183,15 +217,15 @@ void Prog2_Step() {
  
   switch (prgStep) {
   case 0:
-    SetColor(255, 0, 0, false, false);
+    UpdColor(255, 0, 0);
     break;
 
   case 1:
-    SetColor(0, 255, 0, false, false);
+    UpdColor(0, 255, 0);
     break;
      
   case 2:
-    SetColor(0, 0, 255, false, false);
+    UpdColor(0, 0, 255);
     break;     
   }        
   prgStep++;   
@@ -220,7 +254,7 @@ void Prog3_Step() {
      break;     
    }
 
-   SetColor(RCol, GCol, BCol, false, false);
+   UpdColor(RCol, GCol, BCol);
    
    if (index >= 255){
       prgStep++;
@@ -311,8 +345,25 @@ void loop() {
   if (!isON)
     return;
 
-  if(millis() - previsionTimeStep < prgStepTime) {
+  if (tick - previsionTimeStep < prgStepTime) {
     return;
+  }
+  if ((saveDelayed != 0) && (tick - saveDelayed > cSaveDelayed)) {
+    //! save to flash
+
+    saveState(COnState, isON);
+    saveState(CPrgNum, PROG);
+    saveState(CPrgPeriod, prgStepTime/100);
+    saveState(CBrightness, brightness);
+    saveState(CRVal, RCol);
+    saveState(CGVal, GCol);
+    saveState(CBVal, BCol);
+
+     #ifdef DEBUG      
+       Serial.println("#Save state - ok");
+     #endif
+      
+    saveDelayed = 0;
   }
   previsionTimeStep = millis();
          
@@ -388,14 +439,14 @@ void receive(const MyMessage &message) {
       return;
     }
 
-    #ifdef DEBUG
-      Serial.print("Response: ");
-      Serial.println(message.sensor);
-    #endif
+    // Set NULL date (if empty sensors)
+    if (strlen(message.getString()) == 0) {
+      return;
+    }
   
     switch (message.sensor) {
     // ON/OF; type == V_STATUS
-    case SensOn:
+    case SensOn:      
       SetOn(message.getBool(), true, false);
       break;        
       
@@ -403,12 +454,13 @@ void receive(const MyMessage &message) {
     case SensProg:
       switch (message.type) {
       case V_VAR1:
-        SetProg(message.getByte(), true, false);
+        SetProg(message.getByte(), true, false);        
         SetOn(true, true, true);
+              
         break;
         
-      case V_VAR2:
-        SetStepTime(message.getInt(), true, false);        
+      case V_VAR2:      
+        SetStepTime(message.getInt(), true, false);
         break;
       
       default:
@@ -423,8 +475,6 @@ void receive(const MyMessage &message) {
     // RGB Data; type == V_VAR1
     case SensRGB:      
       fLong = strtol( message.data, NULL, 16);
-
-      SetProg(0, true, true);      
       SetColor(byte(fLong >> 16), byte(fLong >> 8), byte(fLong), true, false);
       break;  
 
@@ -455,43 +505,52 @@ void receive(const MyMessage &message) {
     }    
 }
 
-void SetOn(bool Val, bool SaveState, bool SendState){
+void SetOn(bool Val, bool SaveState, bool SendState){  
   if (Val != isON) {
     isON = Val;
-    SetColor(RCol, GCol, BCol, false, false);
-
-    #ifdef DEBUG
-      Serial.print("ON: "); Serial.println(isON);  
-    #endif
+    UpdColor(RCol, GCol, BCol);
 
     if (SaveState) {
-      //! saveState(COnState, isON); // Save state  
+      saveDelayed = millis();
+      
+      #ifdef DEBUG
+        Serial.print("### Changed - ");
+      #endif
     }
   }  
   
   if (SendState) {
     send(msgState.set(isON).setDestination(cGateAdr));
   }
+
+  #ifdef DEBUG
+    Serial.print("ON: ");
+    Serial.println(isON);
+  #endif
 }
 
 void SetProg(byte Val, bool SaveState, bool SendState){
   if (Val != PROG){
     if (Val > 3) Val = 0;
     PROG = Val;
-    
-  
-    #ifdef DEBUG
-      Serial.print("Change prog: "); Serial.println(PROG);  
-    #endif
   
     if (SaveState) {
-      //! saveState(COnState, isON); // Save state  
+      saveDelayed = millis();
+
+      #ifdef DEBUG
+        Serial.print("### Changed - ");
+      #endif
     }  
   }  
-
+  
   if (SendState) {
     send(msgPrg.set(PROG).setDestination(cGateAdr));
   }
+
+  #ifdef DEBUG
+    Serial.print("Change prog: "); 
+    Serial.println(PROG);  
+  #endif  
 }
 
 void SetBrightness(int Val, bool SaveState, bool SendState){
@@ -500,20 +559,25 @@ void SetBrightness(int Val, bool SaveState, bool SendState){
     if (Val > 100) Val = 100;          
     brightness = Val;
         
-    SetColor(RCol, GCol, BCol, false, false);
-  
-    #ifdef DEBUG
-      Serial.print("Brightness: "); Serial.println(brightness);  
-    #endif
+    UpdColor(RCol, GCol, BCol);
   
     if (SaveState) {
-      //! saveState(COnState, isON); // Save state  
+      saveDelayed = millis();
+
+      #ifdef DEBUG
+        Serial.print("### Changed - ");
+      #endif
     }  
   }  
 
   if (SendState) {
     send(msgPrgBrightness.set(brightness).setDestination(cGateAdr));
   }
+
+  #ifdef DEBUG
+    Serial.print("Brightness: "); 
+    Serial.println(brightness);  
+  #endif  
 }
 
 void SetStepTime(int Val, bool SaveState, bool SendState){
@@ -521,34 +585,60 @@ void SetStepTime(int Val, bool SaveState, bool SendState){
     if (Val < 1) Val = 1;
     if (Val > 5000) Val = 5000;
     prgStepTime = Val;
- 
-    #ifdef DEBUG
-      Serial.print("Step time: "); Serial.println(prgStepTime);  
-    #endif
   
     if (SaveState) {
-      //! saveState(COnState, isON); // Save state  
-    }  
-  }  
+      saveDelayed = millis();
 
+      #ifdef DEBUG
+        Serial.print("### Changed - ");
+      #endif
+    }    
+  }  
+ 
   if (SendState) {
     send(msgPrgStepTime.set(prgStepTime).setDestination(cGateAdr));
   }
+
+  #ifdef DEBUG
+    Serial.print("Step time: "); 
+    Serial.println(prgStepTime);  
+  #endif  
 }
 
 void SetColor(byte R, byte G, byte B, bool SaveState, bool SendState){
-
   RCol = R;
   GCol = G;
   BCol = B;
 
+  UpdColor(R, G, B);
+
+  if (SaveState) {
+    saveDelayed = millis();
+
+    #ifdef DEBUG
+      Serial.print("### Changed - ");
+    #endif
+  }
+
+  if (SendState) {
+    char myStr[7];
+    sprintf( myStr, "%02X%02X%02X", RCol, GCol, BCol);
+    send(msgRGB.set(myStr).setDestination(cGateAdr));
+  }
+
   #ifdef DEBUG
-    // Serial.print("Color: "); Serial.print(R, HEX); Serial.print(G, HEX); Serial.println(B, HEX);
-  #endif
+    Serial.print("Color: "); 
+    Serial.print(R, HEX); 
+    Serial.print(G, HEX); 
+    Serial.println(B, HEX);
+  #endif  
+}
+
+void UpdColor(byte R, byte G, byte B){
   
-  R = brightness*RCol/100;
-  G = brightness*GCol/100;
-  B = brightness*BCol/100;
+  R = brightness*R/100;
+  G = brightness*G/100;
+  B = brightness*B/100;
 
   if (!isON) {
     analogWrite(CH1_PIN, 0);
@@ -571,11 +661,5 @@ void SetColor(byte R, byte G, byte B, bool SaveState, bool SendState){
     analogWrite(CH2_PIN, G);
     analogWrite(CH3_PIN, B);
     break;
-  }
-
-  if (SendState) {
-    char myStr[7];
-    sprintf( myStr, "%02X%02X%02X", RCol, GCol, BCol);
-    send(msgRGB.set(myStr).setDestination(cGateAdr));
   }
 }

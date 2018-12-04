@@ -15,7 +15,6 @@ Required libraries :
 TODO:
 * Fast boot start. Using EPROM FOTA
 * Fast start. Using MY_PASSIVE_NODE with get NodeID from flash
-* Fix request/response with empty values
 * Start without gate, load last data from flash
 * MajorDomo mysensors pasport
 
