@@ -184,7 +184,7 @@ void presentation(){
   present(SensRGB,      S_RGB_LIGHT,    "RGB");
   present(SensProg,     S_CUSTOM,       "Programe");
   present(SensLevel,    S_LIGHT_LEVEL,  "Brightness (0-100)");
-  present(SensProfile,  S_CUSTOM,       "Profile 0=RGB;1=GRB");
+  present(SensProfile,  S_CUSTOM,       "RGB;GRB;RBG;BRG;BGR;GBR");
 }
 
 void PrgTableStep() {  
@@ -650,16 +650,32 @@ void UpdColor(byte R, byte G, byte B){
   switch (Profile) {   
   case 1: 
     // GRB
-    analogWrite(CH1_PIN, G);
-    analogWrite(CH2_PIN, R);    
-    analogWrite(CH3_PIN, B);
+    analogWrite(CH1_PIN, G); analogWrite(CH2_PIN, R); analogWrite(CH3_PIN, B);
     break;
-    
+
+  case 2: 
+    // RBG
+    analogWrite(CH1_PIN, R); analogWrite(CH2_PIN, B); analogWrite(CH3_PIN, G);
+    break;
+
+  case 3:
+    // BRG
+    analogWrite(CH1_PIN, B); analogWrite(CH2_PIN, R); analogWrite(CH3_PIN, G);
+    break;
+
+  case 4:
+    // BGR
+    analogWrite(CH1_PIN, B); analogWrite(CH2_PIN, G); analogWrite(CH3_PIN, R);
+    break;
+
+  case 5:
+    // GRB
+    analogWrite(CH1_PIN, G); analogWrite(CH2_PIN, R); analogWrite(CH3_PIN, B);
+    break;
+           
   default:
     // RGB
-    analogWrite(CH1_PIN, R);
-    analogWrite(CH2_PIN, G);
-    analogWrite(CH3_PIN, B);
+    analogWrite(CH1_PIN, R); analogWrite(CH2_PIN, G); analogWrite(CH3_PIN, B);
     break;
   }
 }
